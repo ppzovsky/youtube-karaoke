@@ -91,3 +91,50 @@ test("pontuação é determinística, limitada e exige 15 segundos válidos", ()
   assert.deepEqual(first, second);
   assert.ok(first.score >= 0 && first.score <= 100);
 });
+
+function recordMelody(accumulator: ReturnType<typeof createAccumulator>, offset = 0): void {
+  for (let index = 0; index < 400; index += 1) {
+    recordVoicedFrame(accumulator, {
+      frequency: Math.floor(index / 10) % 2 === 0 ? 180 : 210,
+      confidence: 0.9,
+      rms: 0.12,
+      seconds: 0.05,
+      clipped: false,
+      at: offset + index * 0.05,
+    });
+  }
+}
+
+test("grito constante não recebe nota alta só pelo volume", () => {
+  const shout = createAccumulator();
+  for (let index = 0; index < 400; index += 1) {
+    recordVoicedFrame(shout, {
+      frequency: 180,
+      confidence: 0.92,
+      rms: 0.42,
+      seconds: 0.05,
+      clipped: false,
+      at: index * 0.05,
+    });
+  }
+
+  const result = scorePerformance(shout);
+  assert.equal(result.valid, true);
+  assert.ok(result.score < 70);
+  assert.ok(result.breakdown.expressiveness < 8);
+});
+
+test("ritmo alinhado com a batida vale mais que ritmo deslocado", () => {
+  const aligned = createAccumulator();
+  const delayed = createAccumulator();
+  const beats = Array.from({ length: 45 }, (_, index) => index * 0.5);
+  recordMelody(aligned);
+  recordMelody(delayed, 0.125);
+
+  const alignedResult = scorePerformance(aligned, { beatTimes: beats });
+  const delayedResult = scorePerformance(delayed, { beatTimes: beats });
+  assert.equal(alignedResult.valid, true);
+  assert.equal(delayedResult.valid, true);
+  assert.ok(alignedResult.breakdown.expressiveness > delayedResult.breakdown.expressiveness);
+  assert.ok(alignedResult.score > delayedResult.score);
+});

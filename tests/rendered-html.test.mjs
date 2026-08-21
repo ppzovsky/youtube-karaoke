@@ -21,7 +21,7 @@ test("renderiza a experiência inicial completa em pt-BR", async () => {
 
   const html = await response.text();
   assert.match(html, /<html lang="pt-BR">/i);
-  assert.match(html, /Karaoke Arcade — Sua voz, seu palco/i);
+  assert.match(html, /Cara ou Quê\? — Sua voz, seu palco/i);
   assert.match(html, /SUA VOZ\.<br\/><em>SEU PALCO\.<\/em>/i);
   assert.match(html, /id="singer"/i);
   assert.match(html, /id="song"/i);

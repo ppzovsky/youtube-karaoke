@@ -16,10 +16,18 @@ export class VoiceSession {
   private stream: MediaStream | null = null;
   private analyser: AnalyserNode | null = null;
   private samples: Float32Array<ArrayBuffer> | null = null;
+  private rhythmStream: MediaStream | null = null;
+  private rhythmAnalyser: AnalyserNode | null = null;
+  private rhythmBins: Uint8Array<ArrayBuffer> | null = null;
   private timer: number | null = null;
   private lastFrameAt = 0;
+  private startedAt = 0;
   private noiseFloor = 0.012;
   private accumulator: ScoreAccumulator = createAccumulator();
+  private beatTimes: number[] = [];
+  private recentRhythmEnergy: number[] = [];
+  private previousRhythmEnergy = 0;
+  private lastBeatAt = -Infinity;
 
   async prepare(onCalibration: (progress: number) => void): Promise<void> {
     if (!navigator.mediaDevices?.getUserMedia) {
@@ -57,10 +65,37 @@ export class VoiceSession {
     this.noiseFloor = Math.max(0.012, averageNoise);
   }
 
+  async enableRhythmAnalysis(): Promise<void> {
+    if (!this.context || !navigator.mediaDevices?.getDisplayMedia) return;
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
+      if (!stream.getAudioTracks().length) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+      const source = this.context.createMediaStreamSource(stream);
+      const analyser = this.context.createAnalyser();
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.25;
+      source.connect(analyser);
+      this.rhythmStream = stream;
+      this.rhythmAnalyser = analyser;
+      this.rhythmBins = new Uint8Array(analyser.frequencyBinCount);
+      stream.getAudioTracks().forEach((track) => track.addEventListener("ended", () => this.stopRhythmAnalysis()));
+    } catch {
+      this.stopRhythmAnalysis();
+    }
+  }
+
   start(onMetrics: (metrics: LiveMetrics) => void): void {
     if (!this.context || !this.analyser || !this.samples) throw new Error("Microfone não preparado.");
     this.accumulator = createAccumulator();
     this.lastFrameAt = performance.now();
+    this.startedAt = this.lastFrameAt;
+    this.beatTimes = [];
+    this.recentRhythmEnergy = [];
+    this.previousRhythmEnergy = 0;
+    this.lastBeatAt = -Infinity;
     this.timer = window.setInterval(() => {
       if (!this.analyser || !this.samples || !this.context) return;
       const now = performance.now();
@@ -70,6 +105,7 @@ export class VoiceSession {
       const rms = calculateRms(this.samples);
       const peak = this.samples.reduce((max, value) => Math.max(max, Math.abs(value)), 0);
       const pitch = detectPitch(this.samples, this.context.sampleRate);
+      const at = (now - this.startedAt) / 1000;
       const voiceThreshold = Math.max(0.018, this.noiseFloor * 2.35);
       if (rms >= voiceThreshold && pitch.frequency >= 75 && pitch.frequency <= 1000 && pitch.confidence >= 0.52) {
         recordVoicedFrame(this.accumulator, {
@@ -78,8 +114,10 @@ export class VoiceSession {
           rms,
           seconds: elapsed,
           clipped: peak >= 0.97,
+          at,
         });
       }
+      this.collectBeat(at);
       const live = getLiveMetrics(this.accumulator);
       onMetrics({ ...live, voicedSeconds: this.accumulator.voicedSeconds });
     }, 50);
@@ -88,7 +126,7 @@ export class VoiceSession {
   finish(): PerformanceResult {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
-    const result = scorePerformance(this.accumulator);
+    const result = scorePerformance(this.accumulator, this.beatTimes.length >= 5 ? { beatTimes: this.beatTimes } : undefined);
     this.dispose();
     return result;
   }
@@ -106,5 +144,37 @@ export class VoiceSession {
     this.context = null;
     this.analyser = null;
     this.samples = null;
+    this.stopRhythmAnalysis();
+  }
+
+  private collectBeat(at: number): void {
+    if (!this.rhythmAnalyser || !this.rhythmBins) return;
+    this.rhythmAnalyser.getByteFrequencyData(this.rhythmBins);
+    const lowFrequencyBins = Math.min(24, this.rhythmBins.length);
+    const energy = lowFrequencyBins
+      ? this.rhythmBins.slice(0, lowFrequencyBins).reduce((sum, value) => sum + value, 0) / lowFrequencyBins
+      : 0;
+    this.recentRhythmEnergy.push(energy);
+    if (this.recentRhythmEnergy.length > 24) this.recentRhythmEnergy.shift();
+    const baseline = this.recentRhythmEnergy.length
+      ? this.recentRhythmEnergy.reduce((sum, value) => sum + value, 0) / this.recentRhythmEnergy.length
+      : 0;
+    const isPeak = this.recentRhythmEnergy.length >= 8
+      && energy > baseline * 1.18
+      && energy - this.previousRhythmEnergy > 5
+      && at - this.lastBeatAt >= 0.24;
+    if (isPeak) {
+      this.beatTimes.push(at);
+      this.lastBeatAt = at;
+    }
+    this.previousRhythmEnergy = energy;
+  }
+
+  private stopRhythmAnalysis(): void {
+    const stream = this.rhythmStream;
+    this.rhythmStream = null;
+    this.rhythmAnalyser = null;
+    this.rhythmBins = null;
+    stream?.getTracks().forEach((track) => track.stop());
   }
 }

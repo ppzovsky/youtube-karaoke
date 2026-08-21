@@ -90,6 +90,7 @@ export default function KaraokeApp() {
   const [calibration, setCalibration] = useState(0);
   const [metrics, setMetrics] = useState<LiveMetrics>({ presence: 0, control: 0, energy: 0, voicedSeconds: 0 });
   const [confirmClear, setConfirmClear] = useState(false);
+  const [starting, setStarting] = useState(false);
   const voiceRef = useRef<VoiceSession | null>(null);
   const playerRef = useRef<PlayerInstance | null>(null);
   const finishingRef = useRef(false);
@@ -154,15 +155,22 @@ export default function KaraokeApp() {
     }
   };
 
-  const startSinging = () => {
+  const startSinging = async () => {
+    const session = voiceRef.current;
+    if (!session || starting) return;
+    setStarting(true);
     finishingRef.current = false;
-    setMetrics({ presence: 0, control: 0, energy: 0, voicedSeconds: 0 });
-    setView("singing");
     try {
-      voiceRef.current?.start(setMetrics);
+      await session.enableRhythmAnalysis();
+      if (voiceRef.current !== session) return;
+      setMetrics({ presence: 0, control: 0, energy: 0, voicedSeconds: 0 });
+      setView("singing");
+      session.start(setMetrics);
     } catch {
       setMessage("O microfone perdeu a conexão. Volte e tente prepará-lo novamente.");
       setView("results");
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -308,7 +316,7 @@ export default function KaraokeApp() {
 
       {view === "calibrating" && selected && (
         <section className="center-stage calibration-stage">
-          <p className="eyebrow"><span /> AJUSTANDO O SOM</p>
+          <p className="eyebrow"><span /> CALIBRANDO ÁUDIO</p>
           <div className="calibration-orb"><i style={{ transform: `scale(${0.75 + calibration * 0.25})` }}>●</i><span>{Math.round(calibration * 100)}%</span></div>
           <h1>FIQUE EM <em>SILÊNCIO</em></h1>
           <p>Estamos ouvindo o ambiente por três segundos para separar melhor sua voz do ruído.</p>
@@ -322,7 +330,8 @@ export default function KaraokeApp() {
           <span className="ready-check" aria-hidden="true">✓</span>
           <h1>HORA DO <em>SHOW!</em></h1>
           <div className="selected-song"><img src={selected.thumbnail} alt="" /><div><small>{singer}, VOCÊ VAI CANTAR</small><strong>{cleanTitle(selected.title)}</strong><span>{selected.channel} · {selected.duration}</span></div></div>
-          <button className="primary-action" type="button" onClick={startSinging}>COMEÇAR APRESENTAÇÃO <span aria-hidden="true">▶</span></button>
+          <p className="helper">Ao começar, selecione <strong>esta aba</strong> e marque compartilhar áudio para analisar o ritmo.</p>
+          <button className="primary-action" type="button" onClick={startSinging} disabled={starting}>{starting ? "PREPARANDO ÁUDIO…" : <>COMEÇAR APRESENTAÇÃO <span aria-hidden="true">▶</span></>}</button>
           <button className="text-button" type="button" onClick={() => { voiceRef.current?.cancel(); voiceRef.current = null; setView("results"); }}>ESCOLHER OUTRA MÚSICA</button>
         </section>
       )}
@@ -333,7 +342,7 @@ export default function KaraokeApp() {
             <div className="player-frame"><div id="karaoke-player" /><div className="player-label"><span>{cleanTitle(selected.title)}</span><small>{selected.channel}</small></div></div>
             <aside className="meters-panel">
               <div className="meter-title"><span aria-hidden="true">★</span><div><small>NO PALCO</small><strong>{singer}</strong></div></div>
-              {([ ["PRESENÇA", metrics.presence, "cyan"], ["CONTROLE", metrics.control, "pink"], ["ENERGIA", metrics.energy, "yellow"] ] as const).map(([label, value, color]) => (
+              {([ ["PRESENÇA", metrics.presence, "cyan"], ["CONTROLE", metrics.control, "pink"], ["CONSISTÊNCIA", metrics.energy, "yellow"] ] as const).map(([label, value, color]) => (
                 <div className={`meter ${color}`} key={label}><div><span>{label}</span><strong>{metricLabel(value)}</strong></div><div className="meter-track"><i style={{ width: `${value}%` }} /></div><small>{value}%</small></div>
               ))}
               <button className="end-button" type="button" onClick={finishPerformance}>ENCERRAR APRESENTAÇÃO</button>
@@ -352,10 +361,10 @@ export default function KaraokeApp() {
               <div className="score-number"><strong>{result.score}</strong><span>/100</span></div>
               <h1>{result.score >= 80 ? "LENDA DO" : result.score >= 60 ? "SHOW DE" : "PALCO É"} <em>{result.score >= 80 ? "PALCO!" : result.score >= 60 ? "VOZ!" : "SEU!"}</em></h1>
               <div className="breakdown-grid">
-                <article><span>PRESENÇA</span><strong>{result.breakdown.presence}<small>/25</small></strong></article>
-                <article><span>CONTROLE</span><strong>{result.breakdown.control}<small>/35</small></strong></article>
-                <article><span>CONSISTÊNCIA</span><strong>{result.breakdown.consistency}<small>/20</small></strong></article>
-                <article><span>EXPRESSIVIDADE</span><strong>{result.breakdown.expressiveness}<small>/20</small></strong></article>
+                <article><span>PRESENÇA</span><strong>{result.breakdown.presence}<small>/20</small></strong></article>
+                <article><span>CONTROLE</span><strong>{result.breakdown.control}<small>/30</small></strong></article>
+                <article><span>CONSISTÊNCIA</span><strong>{result.breakdown.consistency}<small>/25</small></strong></article>
+                <article><span>MUSICALIDADE</span><strong>{result.breakdown.expressiveness}<small>/25</small></strong></article>
               </div>
             </>
           ) : (
