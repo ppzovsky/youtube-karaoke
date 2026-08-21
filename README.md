@@ -1,4 +1,4 @@
-# YouTube Karaoke Arcade
+# Cara ou Quê?
 
 Karaokê web em português com busca no catálogo do YouTube, análise vocal local e leaderboard persistido no navegador.
 

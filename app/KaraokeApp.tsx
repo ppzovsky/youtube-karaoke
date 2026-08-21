@@ -245,9 +245,9 @@ export default function KaraokeApp() {
   return (
     <main className={`arcade-shell view-${view}`}>
       <header className="topbar">
-        <button className="brand" type="button" onClick={goHome} aria-label="Karaoke Arcade — início" disabled={isBusy}>
+        <button className="brand" type="button" onClick={goHome} aria-label="Cara ou Quê? — início" disabled={isBusy}>
           <span className="brand-mark" aria-hidden="true">♪</span>
-          <span>KARAOKE <b>ARCADE</b></span>
+          <span><b className="brand-pink">CARA</b> OU <b>QUÊ?</b></span>
         </button>
         <button className="leaderboard-button" type="button" onClick={() => { setMessage(""); setView("leaderboard"); }} disabled={isBusy || view === "leaderboard"}>
           <span aria-hidden="true">♛</span> LEADERBOARD
@@ -329,16 +329,13 @@ export default function KaraokeApp() {
 
       {view === "singing" && selected && (
         <section className="performance-stage">
-          <div className="performance-heading"><div><p>AGORA NO PALCO</p><h2>{singer}</h2></div><div className="singing-live"><i /> AO VIVO</div></div>
           <div className="performance-layout">
             <div className="player-frame"><div id="karaoke-player" /><div className="player-label"><span>{cleanTitle(selected.title)}</span><small>{selected.channel}</small></div></div>
             <aside className="meters-panel">
-              <div className="meter-title"><span aria-hidden="true">▥</span><div><small>ANÁLISE LOCAL</small><strong>SUA PERFORMANCE</strong></div></div>
+              <div className="meter-title"><span aria-hidden="true">★</span><div><small>NO PALCO</small><strong>{singer}</strong></div></div>
               {([ ["PRESENÇA", metrics.presence, "cyan"], ["CONTROLE", metrics.control, "pink"], ["ENERGIA", metrics.energy, "yellow"] ] as const).map(([label, value, color]) => (
                 <div className={`meter ${color}`} key={label}><div><span>{label}</span><strong>{metricLabel(value)}</strong></div><div className="meter-track"><i style={{ width: `${value}%` }} /></div><small>{value}%</small></div>
               ))}
-              <div className="valid-time"><span>TEMPO DE VOZ VÁLIDA</span><strong>{metrics.voicedSeconds.toFixed(1)}s <small>/ mínimo 15s</small></strong><div className="meter-track"><i style={{ width: `${Math.min(100, metrics.voicedSeconds / 15 * 100)}%` }} /></div></div>
-              <p><span aria-hidden="true">◆</span> Esta é uma avaliação divertida de presença, controle e energia — não compara sua voz com a melodia original.</p>
               <button className="end-button" type="button" onClick={finishPerformance}>ENCERRAR APRESENTAÇÃO</button>
             </aside>
           </div>
@@ -404,7 +401,7 @@ export default function KaraokeApp() {
         </div>
       )}
 
-      <footer><span>KARAOKE ARCADE</span><p>Feito para cantar alto e se divertir.</p><small>Áudio processado localmente · Dados salvos neste aparelho</small></footer>
+      <footer><span>CARA OU QUÊ?</span><p>Feito para cantar alto e se divertir.</p><small>Áudio processado localmente · Dados salvos neste aparelho</small></footer>
       <span className="sr-only" aria-live="polite">{ATTEMPTS_KEY && `${attempts.length} apresentações salvas`}</span>
     </main>
   );
