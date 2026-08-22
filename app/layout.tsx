@@ -12,7 +12,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    icons: { icon: "/favicon.png", shortcut: "/favicon.png", apple: "/cara-ou-que-logo.png" },
     openGraph: { title, description, type: "website", locale: "pt_BR", images: [{ url: image, width: 1729, height: 910, alt: "Cara ou Quê? — Sua voz, seu palco" }] },
     twitter: { card: "summary_large_image", title, description, images: [image] },
   };

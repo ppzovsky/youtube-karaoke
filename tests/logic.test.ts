@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ATTEMPTS_KEY, buildLeaderboard, clearAttempts, normalizePlayerName, readAttempts, writeAttempts } from "../lib/storage.ts";
 import { createAccumulator, recordVoicedFrame, scorePerformance } from "../lib/scoring.ts";
+import { RhythmCapture } from "../lib/rhythm-capture.ts";
 import { normalizeSearchQuery, parseIsoDuration } from "../lib/youtube.ts";
 import type { Attempt } from "../lib/types.ts";
 
@@ -137,4 +138,81 @@ test("ritmo alinhado com a batida vale mais que ritmo deslocado", () => {
   assert.equal(delayedResult.valid, true);
   assert.ok(alignedResult.breakdown.expressiveness > delayedResult.breakdown.expressiveness);
   assert.ok(alignedResult.score > delayedResult.score);
+});
+
+type FakeTrack = {
+  readyState: "live" | "ended";
+  stopped: number;
+  stop: () => void;
+  addEventListener: (type: string, listener: () => void) => void;
+  removeEventListener: (type: string, listener: () => void) => void;
+  end: () => void;
+};
+
+function fakeTrack(): FakeTrack {
+  const listeners = new Set<() => void>();
+  const track: FakeTrack = {
+    readyState: "live",
+    stopped: 0,
+    stop: () => {
+      track.stopped += 1;
+      track.readyState = "ended";
+    },
+    addEventListener: (_type, listener) => listeners.add(listener),
+    removeEventListener: (_type, listener) => listeners.delete(listener),
+    end: () => {
+      track.readyState = "ended";
+      listeners.forEach((listener) => listener());
+    },
+  };
+  return track;
+}
+
+function fakeStream(audioTracks: FakeTrack[], videoTracks: FakeTrack[] = []): MediaStream {
+  const tracks = [...audioTracks, ...videoTracks];
+  return {
+    getAudioTracks: () => audioTracks,
+    getTracks: () => tracks,
+  } as unknown as MediaStream;
+}
+
+test("modo festa reutiliza a captura da aba e encerra todas as faixas", async () => {
+  const audio = fakeTrack();
+  const video = fakeTrack();
+  let requests = 0;
+  const capture = new RhythmCapture(async () => {
+    requests += 1;
+    return fakeStream([audio], [video]);
+  }, () => true);
+
+  assert.deepEqual(await capture.acquire(), { status: "active", reused: false });
+  assert.deepEqual(await capture.acquire(), { status: "active", reused: true });
+  assert.equal(requests, 1);
+  assert.equal(capture.active, true);
+
+  capture.stop();
+  assert.equal(capture.active, false);
+  assert.equal(audio.stopped, 1);
+  assert.equal(video.stopped, 1);
+});
+
+test("fim do compartilhamento restaura o modo festa para uma nova escolha", async () => {
+  const audio = fakeTrack();
+  const capture = new RhythmCapture(async () => fakeStream([audio]), () => true);
+  const states: boolean[] = [];
+  capture.subscribe((active) => states.push(active));
+
+  await capture.acquire();
+  audio.end();
+
+  assert.equal(capture.active, false);
+  assert.deepEqual(states, [true, false]);
+});
+
+test("sem áudio compartilhado, a apresentação pode usar o fallback vocal", async () => {
+  const video = fakeTrack();
+  const capture = new RhythmCapture(async () => fakeStream([], [video]), () => true);
+  assert.deepEqual(await capture.acquire(), { status: "no-audio" });
+  assert.equal(video.stopped, 1);
+  assert.equal(capture.active, false);
 });

@@ -16,7 +16,7 @@ export class VoiceSession {
   private stream: MediaStream | null = null;
   private analyser: AnalyserNode | null = null;
   private samples: Float32Array<ArrayBuffer> | null = null;
-  private rhythmStream: MediaStream | null = null;
+  private rhythmSource: MediaStreamAudioSourceNode | null = null;
   private rhythmAnalyser: AnalyserNode | null = null;
   private rhythmBins: Uint8Array<ArrayBuffer> | null = null;
   private timer: number | null = null;
@@ -65,26 +65,18 @@ export class VoiceSession {
     this.noiseFloor = Math.max(0.012, averageNoise);
   }
 
-  async enableRhythmAnalysis(): Promise<void> {
-    if (!this.context || !navigator.mediaDevices?.getDisplayMedia) return;
-    try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ audio: true, video: true });
-      if (!stream.getAudioTracks().length) {
-        stream.getTracks().forEach((track) => track.stop());
-        return;
-      }
-      const source = this.context.createMediaStreamSource(stream);
-      const analyser = this.context.createAnalyser();
-      analyser.fftSize = 2048;
-      analyser.smoothingTimeConstant = 0.25;
-      source.connect(analyser);
-      this.rhythmStream = stream;
-      this.rhythmAnalyser = analyser;
-      this.rhythmBins = new Uint8Array(analyser.frequencyBinCount);
-      stream.getAudioTracks().forEach((track) => track.addEventListener("ended", () => this.stopRhythmAnalysis()));
-    } catch {
-      this.stopRhythmAnalysis();
-    }
+  enableRhythmAnalysis(stream: MediaStream | null): boolean {
+    if (!this.context || !stream?.getAudioTracks().some((track) => track.readyState === "live")) return false;
+    this.stopRhythmAnalysis();
+    const source = this.context.createMediaStreamSource(stream);
+    const analyser = this.context.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.25;
+    source.connect(analyser);
+    this.rhythmSource = source;
+    this.rhythmAnalyser = analyser;
+    this.rhythmBins = new Uint8Array(analyser.frequencyBinCount);
+    return true;
   }
 
   start(onMetrics: (metrics: LiveMetrics) => void): void {
@@ -171,10 +163,10 @@ export class VoiceSession {
   }
 
   private stopRhythmAnalysis(): void {
-    const stream = this.rhythmStream;
-    this.rhythmStream = null;
+    this.rhythmSource?.disconnect();
+    this.rhythmAnalyser?.disconnect();
+    this.rhythmSource = null;
     this.rhythmAnalyser = null;
     this.rhythmBins = null;
-    stream?.getTracks().forEach((track) => track.stop());
   }
 }

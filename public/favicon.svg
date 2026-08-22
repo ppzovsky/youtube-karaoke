@@ -1,8 +1,0 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="64" height="64" rx="12" fill="#090815"/>
-  <g transform="rotate(-6 32 32)">
-    <rect x="17" y="17" width="36" height="36" fill="#FF3B9D"/>
-    <rect x="11" y="11" width="36" height="36" fill="#090815" stroke="#18E6E6" stroke-width="4"/>
-    <text x="29" y="41" fill="#18E6E6" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" text-anchor="middle">♪</text>
-  </g>
-</svg>

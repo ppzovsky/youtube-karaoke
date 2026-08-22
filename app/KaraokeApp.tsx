@@ -11,6 +11,7 @@ import {
   readAttempts,
 } from "../lib/storage";
 import type { Attempt, PerformanceResult, VideoSummary } from "../lib/types";
+import { RhythmCapture } from "../lib/rhythm-capture";
 import { VoiceSession, type LiveMetrics } from "../lib/voice-session";
 
 type View = "home" | "results" | "calibrating" | "ready" | "singing" | "score" | "leaderboard";
@@ -91,10 +92,15 @@ export default function KaraokeApp() {
   const [metrics, setMetrics] = useState<LiveMetrics>({ presence: 0, control: 0, energy: 0, voicedSeconds: 0 });
   const [confirmClear, setConfirmClear] = useState(false);
   const [starting, setStarting] = useState(false);
+  const [rhythmActive, setRhythmActive] = useState(false);
+  const [rhythmRequestAttempted, setRhythmRequestAttempted] = useState(false);
   const voiceRef = useRef<VoiceSession | null>(null);
+  const rhythmCaptureRef = useRef<RhythmCapture | null>(null);
   const playerRef = useRef<PlayerInstance | null>(null);
   const finishingRef = useRef(false);
   const finishRef = useRef<() => void>(() => undefined);
+
+  if (!rhythmCaptureRef.current) rhythmCaptureRef.current = new RhythmCapture();
 
   useEffect(() => {
     const stored = readAttempts(window.localStorage);
@@ -105,7 +111,22 @@ export default function KaraokeApp() {
     }
   }, []);
 
-  useEffect(() => () => voiceRef.current?.cancel(), []);
+  useEffect(() => {
+    const capture = rhythmCaptureRef.current;
+    if (!capture) return;
+    return capture.subscribe((active) => {
+      setRhythmActive(active);
+      if (!active) {
+        setRhythmRequestAttempted(false);
+        setMessage("O compartilhamento de áudio foi encerrado. Você pode continuar cantando sem a análise de ritmo.");
+      }
+    });
+  }, []);
+
+  useEffect(() => () => {
+    voiceRef.current?.cancel();
+    rhythmCaptureRef.current?.stop();
+  }, []);
 
   const leaderboard = useMemo(() => buildLeaderboard(attempts), [attempts]);
   const isBusy = view === "calibrating" || view === "ready" || view === "singing";
@@ -155,14 +176,26 @@ export default function KaraokeApp() {
     }
   };
 
-  const startSinging = async () => {
+  const startSinging = async (activateRhythm = !rhythmRequestAttempted) => {
     const session = voiceRef.current;
     if (!session || starting) return;
     setStarting(true);
     finishingRef.current = false;
     try {
-      await session.enableRhythmAnalysis();
+      const capture = rhythmCaptureRef.current;
+      if (activateRhythm && capture && !capture.active) {
+        setRhythmRequestAttempted(true);
+        const result = await capture.acquire();
+        if (result.status === "no-audio") {
+          setMessage("O ritmo não foi ativado porque o áudio da aba não foi compartilhado. Você pode cantar normalmente ou tentar ativá-lo na próxima música.");
+        } else if (result.status === "cancelled") {
+          setMessage("Tudo bem — esta apresentação seguirá sem análise de ritmo. Você poderá ativá-la na próxima música.");
+        } else if (result.status === "unsupported") {
+          setMessage("Este navegador não permite analisar o áudio da aba. A nota seguirá usando apenas o microfone.");
+        }
+      }
       if (voiceRef.current !== session) return;
+      session.enableRhythmAnalysis(capture?.activeStream ?? null);
       setMetrics({ presence: 0, control: 0, energy: 0, voicedSeconds: 0 });
       setView("singing");
       session.start(setMetrics);
@@ -244,6 +277,12 @@ export default function KaraokeApp() {
     setView("home");
   };
 
+  const endPartyMode = () => {
+    rhythmCaptureRef.current?.stop();
+    setRhythmRequestAttempted(false);
+    setMessage("Modo festa encerrado. A próxima música poderá pedir o compartilhamento de áudio novamente.");
+  };
+
   const clearHistory = () => {
     clearAttempts(window.localStorage);
     setAttempts([]);
@@ -254,13 +293,14 @@ export default function KaraokeApp() {
     <main className={`arcade-shell view-${view}`}>
       <header className="topbar">
         <button className="brand" type="button" onClick={goHome} aria-label="Cara ou Quê? — início" disabled={isBusy}>
-          <span className="brand-mark" aria-hidden="true">♪</span>
+          <img className="brand-logo" src="/cara-ou-que-logo.png" alt="" aria-hidden="true" />
           <span><b className="brand-pink">CARA</b> OU <b>QUÊ?</b></span>
         </button>
         <button className="leaderboard-button" type="button" onClick={() => { setMessage(""); setView("leaderboard"); }} disabled={isBusy || view === "leaderboard"}>
           <span aria-hidden="true">♛</span> LEADERBOARD
           {leaderboard.length > 0 && <i>{leaderboard.length}</i>}
         </button>
+        {rhythmActive && <button className="party-mode-button" type="button" onClick={endPartyMode}>RITMO ATIVO · ENCERRAR</button>}
       </header>
 
       {(view === "home" || view === "results") && (
@@ -270,7 +310,7 @@ export default function KaraokeApp() {
               <p className="eyebrow"><span /> LUZES ACESAS. MICROFONE PRONTO.</p>
               <h1>SUA VOZ.<br /><em>SEU PALCO.</em></h1>
               <p className="intro">Escolha seu hit, solte a voz e conquiste o topo do placar. Não precisa instalar nada — só coragem para cantar.</p>
-              <div className="privacy-note"><span aria-hidden="true">◆</span><p><strong>SUA VOZ FICA AQUI.</strong><br />O áudio é analisado neste aparelho e nunca é gravado ou enviado.</p></div>
+              <div className="privacy-note"><span aria-hidden="true">◆</span><p><strong>SUA VOZ FICA AQUI.</strong><br />O áudio é analisado neste aparelho e nunca é gravado, enviado ou salvo.</p></div>
             </div>
 
             <form className="start-card" onSubmit={search}>
@@ -330,8 +370,15 @@ export default function KaraokeApp() {
           <span className="ready-check" aria-hidden="true">✓</span>
           <h1>HORA DO <em>SHOW!</em></h1>
           <div className="selected-song"><img src={selected.thumbnail} alt="" /><div><small>{singer}, VOCÊ VAI CANTAR</small><strong>{cleanTitle(selected.title)}</strong><span>{selected.channel} · {selected.duration}</span></div></div>
-          <p className="helper">Ao começar, selecione <strong>esta aba</strong> e marque compartilhar áudio para analisar o ritmo.</p>
-          <button className="primary-action" type="button" onClick={startSinging} disabled={starting}>{starting ? "PREPARANDO ÁUDIO…" : <>COMEÇAR APRESENTAÇÃO <span aria-hidden="true">▶</span></>}</button>
+          <p className="helper">
+            {rhythmActive
+              ? <> <strong>RITMO ATIVO.</strong> Esta e as próximas músicas usarão a mesma captura da aba.</>
+              : rhythmRequestAttempted
+                ? <>Você pode cantar sem ritmo ou tentar ativar a análise da aba novamente.</>
+                : <>Ao começar, selecione <strong>esta aba</strong> e marque compartilhar áudio. Só será necessário uma vez no modo festa.</>}
+          </p>
+          <button className="primary-action" type="button" onClick={() => startSinging(!rhythmRequestAttempted)} disabled={starting}>{starting ? "PREPARANDO ÁUDIO…" : rhythmActive || !rhythmRequestAttempted ? <>COMEÇAR APRESENTAÇÃO <span aria-hidden="true">▶</span></> : <>CANTAR SEM RITMO <span aria-hidden="true">▶</span></>}</button>
+          {!rhythmActive && rhythmRequestAttempted && <button className="secondary-action rhythm-retry" type="button" onClick={() => startSinging(true)} disabled={starting}>ATIVAR RITMO</button>}
           <button className="text-button" type="button" onClick={() => { voiceRef.current?.cancel(); voiceRef.current = null; setView("results"); }}>ESCOLHER OUTRA MÚSICA</button>
         </section>
       )}
@@ -342,6 +389,7 @@ export default function KaraokeApp() {
             <div className="player-frame"><div id="karaoke-player" /><div className="player-label"><span>{cleanTitle(selected.title)}</span><small>{selected.channel}</small></div></div>
             <aside className="meters-panel">
               <div className="meter-title"><span aria-hidden="true">★</span><div><small>NO PALCO</small><strong>{singer}</strong></div></div>
+              {rhythmActive && <div className="rhythm-status"><small>RITMO</small><strong>ATIVO</strong><button type="button" onClick={endPartyMode}>ENCERRAR</button></div>}
               {([ ["PRESENÇA", metrics.presence, "cyan"], ["CONTROLE", metrics.control, "pink"], ["CONSISTÊNCIA", metrics.energy, "yellow"] ] as const).map(([label, value, color]) => (
                 <div className={`meter ${color}`} key={label}><div><span>{label}</span><strong>{metricLabel(value)}</strong></div><div className="meter-track"><i style={{ width: `${value}%` }} /></div><small>{value}%</small></div>
               ))}
@@ -410,7 +458,7 @@ export default function KaraokeApp() {
         </div>
       )}
 
-      <footer><span>CARA OU QUÊ?</span><p>Feito para cantar alto e se divertir.</p><small>Áudio processado localmente · Dados salvos neste aparelho</small></footer>
+      <footer><span>CARA OU QUÊ?</span><p>Feito para cantar alto e se divertir.</p><small>Áudio processado localmente · Nada é gravado ou enviado</small></footer>
       <span className="sr-only" aria-live="polite">{ATTEMPTS_KEY && `${attempts.length} apresentações salvas`}</span>
     </main>
   );
