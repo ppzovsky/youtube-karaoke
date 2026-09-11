@@ -377,7 +377,7 @@ export default function KaraokeApp() {
                 ? <>Você pode cantar sem ritmo ou tentar ativar a análise da aba novamente.</>
                 : <>Ao começar, selecione <strong>esta aba</strong> e marque compartilhar áudio. Só será necessário uma vez no modo festa.</>}
           </p>
-          <button className="primary-action" type="button" onClick={() => startSinging(!rhythmRequestAttempted)} disabled={starting}>{starting ? "PREPARANDO ÁUDIO…" : rhythmActive || !rhythmRequestAttempted ? <>COMEÇAR APRESENTAÇÃO <span aria-hidden="true">▶</span></> : <>CANTAR SEM RITMO <span aria-hidden="true">▶</span></>}</button>
+          <button className="primary-action" type="button" onClick={() => startSinging(!rhythmRequestAttempted)} disabled={starting}>{starting ? "PREPARANDO ÁUDIO…" : rhythmActive || !rhythmRequestAttempted ? <>COMEÇAR APRESENTAÇÃO <span aria-hidden="true">▶</span></> : <>CANTAR <span aria-hidden="true">▶</span></>}</button>
           {!rhythmActive && rhythmRequestAttempted && <button className="secondary-action rhythm-retry" type="button" onClick={() => startSinging(true)} disabled={starting}>ATIVAR RITMO</button>}
           <button className="text-button" type="button" onClick={() => { voiceRef.current?.cancel(); voiceRef.current = null; setView("results"); }}>ESCOLHER OUTRA MÚSICA</button>
         </section>
